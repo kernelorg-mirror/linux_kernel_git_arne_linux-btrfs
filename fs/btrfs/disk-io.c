@@ -2379,7 +2379,7 @@ retry_root_backup:
 		BUG_ON(ret);
 
 		if (sb->s_flags & MS_RDONLY) {
-			ret =  btrfs_commit_super(tree_root);
+			ret =  btrfs_commit_super(tree_root, 1);
 			BUG_ON(ret);
 		}
 	}
@@ -2817,15 +2817,17 @@ int btrfs_cleanup_fs_roots(struct btrfs_fs_info *fs_info)
 	return 0;
 }
 
-int btrfs_commit_super(struct btrfs_root *root)
+int btrfs_commit_super(struct btrfs_root *root, int lock)
 {
 	struct btrfs_trans_handle *trans;
 	int ret;
 
-	mutex_lock(&root->fs_info->cleaner_mutex);
+	if (lock)
+		mutex_lock(&root->fs_info->cleaner_mutex);
 	btrfs_run_delayed_iputs(root);
 	btrfs_clean_old_snapshots(root);
-	mutex_unlock(&root->fs_info->cleaner_mutex);
+	if (lock)
+		mutex_unlock(&root->fs_info->cleaner_mutex);
 
 	/* wait until ongoing cleanup work done */
 	down_write(&root->fs_info->cleanup_work_sem);
@@ -2879,7 +2881,10 @@ int close_ctree(struct btrfs_root *root)
 	 * btrfs will cleanup all FS resources first and write sb then.
 	 */
 	if (!(fs_info->sb->s_flags & MS_RDONLY)) {
-		ret = btrfs_commit_super(root);
+		/* wait until ongoing cleanup work done */
+		down_write(&root->fs_info->cleanup_work_sem);
+		up_write(&root->fs_info->cleanup_work_sem);
+		ret = btrfs_commit_super(root, 0);
 		if (ret)
 			printk(KERN_ERR "btrfs: commit super ret %d\n", ret);
 	}

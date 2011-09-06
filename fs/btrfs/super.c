@@ -1016,7 +1016,7 @@ static int btrfs_remount(struct super_block *sb, int *flags, char *data)
 	if (*flags & MS_RDONLY) {
 		sb->s_flags |= MS_RDONLY;
 
-		ret =  btrfs_commit_super(root);
+		ret =  btrfs_commit_super(root, 1);
 		WARN_ON(ret);
 	} else {
 		if (root->fs_info->fs_devices->rw_devices == 0)
