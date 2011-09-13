@@ -186,13 +186,14 @@ struct extent_buffer *btrfs_lock_root_node(struct btrfs_root *root)
  * tree until you end up with a lock on the root.  A locked buffer
  * is returned, with a reference held.
  */
-struct extent_buffer *btrfs_read_lock_root_node(struct btrfs_root *root)
+struct extent_buffer *btrfs_read_lock_root_node(struct btrfs_root *root,
+						int nested)
 {
 	struct extent_buffer *eb;
 
 	while (1) {
 		eb = btrfs_root_node(root);
-		btrfs_tree_read_lock(eb);
+		btrfs_tree_read_lock(eb, nested);
 		if (eb == root->node)
 			break;
 		btrfs_tree_read_unlock(eb);
@@ -1637,6 +1638,7 @@ int btrfs_search_slot(struct btrfs_trans_handle *trans, struct btrfs_root
 	/* everything at write_lock_level or lower must be write locked */
 	int write_lock_level = 0;
 	u8 lowest_level = 0;
+	int nested = p->nested;
 
 	lowest_level = p->lowest_level;
 	WARN_ON(lowest_level && ins_len > 0);
@@ -1678,8 +1680,9 @@ again:
 		b = root->commit_root;
 		extent_buffer_get(b);
 		level = btrfs_header_level(b);
+		BUG_ON(p->skip_locking && nested);
 		if (!p->skip_locking)
-			btrfs_tree_read_lock(b);
+			btrfs_tree_read_lock(b, 0);
 	} else {
 		if (p->skip_locking) {
 			b = btrfs_root_node(root);
@@ -1688,7 +1691,7 @@ again:
 			/* we don't know the level of the root node
 			 * until we actually have it read locked
 			 */
-			b = btrfs_read_lock_root_node(root);
+			b = btrfs_read_lock_root_node(root, nested);
 			level = btrfs_header_level(b);
 			if (level <= write_lock_level) {
 				/* whoops, must trade for write lock */
@@ -1827,7 +1830,8 @@ cow_done:
 					err = btrfs_try_tree_read_lock(b);
 					if (!err) {
 						btrfs_set_path_blocking(p);
-						btrfs_tree_read_lock(b);
+						btrfs_tree_read_lock(b,
+								     nested);
 						btrfs_clear_path_blocking(p, b,
 								  BTRFS_READ_LOCK);
 					}
@@ -3972,7 +3976,7 @@ int btrfs_search_forward(struct btrfs_root *root, struct btrfs_key *min_key,
 
 	WARN_ON(!path->keep_locks);
 again:
-	cur = btrfs_read_lock_root_node(root);
+	cur = btrfs_read_lock_root_node(root, 0);
 	level = btrfs_header_level(cur);
 	WARN_ON(path->nodes[level]);
 	path->nodes[level] = cur;
@@ -4066,7 +4070,7 @@ find_next_key:
 		cur = read_node_slot(root, cur, slot);
 		BUG_ON(!cur);
 
-		btrfs_tree_read_lock(cur);
+		btrfs_tree_read_lock(cur, 0);
 
 		path->locks[level - 1] = BTRFS_READ_LOCK;
 		path->nodes[level - 1] = cur;
@@ -4260,7 +4264,7 @@ again:
 			ret = btrfs_try_tree_read_lock(next);
 			if (!ret) {
 				btrfs_set_path_blocking(path);
-				btrfs_tree_read_lock(next);
+				btrfs_tree_read_lock(next, 0);
 				btrfs_clear_path_blocking(path, next,
 							  BTRFS_READ_LOCK);
 			}
@@ -4297,7 +4301,7 @@ again:
 			ret = btrfs_try_tree_read_lock(next);
 			if (!ret) {
 				btrfs_set_path_blocking(path);
-				btrfs_tree_read_lock(next);
+				btrfs_tree_read_lock(next, 0);
 				btrfs_clear_path_blocking(path, next,
 							  BTRFS_READ_LOCK);
 			}
