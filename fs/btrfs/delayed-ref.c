@@ -442,11 +442,12 @@ update_existing_head_ref(struct btrfs_delayed_ref_node *existing,
  */
 static noinline int add_delayed_ref_head(struct btrfs_fs_info *fs_info,
 					struct btrfs_trans_handle *trans,
-					struct btrfs_delayed_ref_node *ref,
+					struct btrfs_delayed_ref_node **pref,
 					u64 bytenr, u64 num_bytes,
 					int action, int is_data)
 {
 	struct btrfs_delayed_ref_node *existing;
+	struct btrfs_delayed_ref_node *ref = *pref;
 	struct btrfs_delayed_ref_head *head_ref = NULL;
 	struct btrfs_delayed_ref_root *delayed_refs;
 	int count_mod = 1;
@@ -503,6 +504,7 @@ static noinline int add_delayed_ref_head(struct btrfs_fs_info *fs_info,
 
 	if (existing) {
 		update_existing_head_ref(existing, ref);
+		*pref = existing;
 		/*
 		 * we've updated the existing ref, free the newly
 		 * allocated ref
@@ -654,6 +656,7 @@ int btrfs_add_delayed_tree_ref(struct btrfs_fs_info *fs_info,
 {
 	struct btrfs_delayed_tree_ref *ref;
 	struct btrfs_delayed_ref_head *head_ref;
+	struct btrfs_delayed_ref_node *node;
 	struct btrfs_delayed_ref_root *delayed_refs;
 	int ret;
 	struct seq_list seq_elem;
@@ -678,7 +681,8 @@ int btrfs_add_delayed_tree_ref(struct btrfs_fs_info *fs_info,
 	 * insert both the head node and the new ref without dropping
 	 * the spin lock
 	 */
-	ret = add_delayed_ref_head(fs_info, trans, &head_ref->node, bytenr,
+	node = &head_ref->node;
+	ret = add_delayed_ref_head(fs_info, trans, &node, bytenr,
 				   num_bytes, action, 0);
 	BUG_ON(ret);
 
@@ -687,8 +691,10 @@ int btrfs_add_delayed_tree_ref(struct btrfs_fs_info *fs_info,
 				   for_cow, &seq_elem);
 	BUG_ON(ret);
 	spin_unlock(&delayed_refs->lock);
-	if (fs_info->quota_enabled && !for_cow && is_fstree(ref_root))
+	if (fs_info->quota_enabled && !for_cow && is_fstree(ref_root)) {
+		btrfs_qgroup_record_ref(trans, fs_info, &ref->node, extent_op);
 		put_delayed_seq(delayed_refs, &seq_elem);
+	}
 
 	return 0;
 }
@@ -706,6 +712,7 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 {
 	struct btrfs_delayed_data_ref *ref;
 	struct btrfs_delayed_ref_head *head_ref;
+	struct btrfs_delayed_ref_node *node;
 	struct btrfs_delayed_ref_root *delayed_refs;
 	int ret;
 	struct seq_list seq_elem;
@@ -730,7 +737,8 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 	 * insert both the head node and the new ref without dropping
 	 * the spin lock
 	 */
-	ret = add_delayed_ref_head(fs_info, trans, &head_ref->node, bytenr,
+	node = &head_ref->node;
+	ret = add_delayed_ref_head(fs_info, trans, &node, bytenr,
 				   num_bytes, action, 1);
 	BUG_ON(ret);
 
@@ -739,8 +747,10 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 				   action, for_cow, &seq_elem);
 	BUG_ON(ret);
 	spin_unlock(&delayed_refs->lock);
-	if (fs_info->quota_enabled && !for_cow && is_fstree(ref_root))
+	if (fs_info->quota_enabled && !for_cow && is_fstree(ref_root)) {
+		btrfs_qgroup_record_ref(trans, fs_info, &ref->node, extent_op);
 		put_delayed_seq(delayed_refs, &seq_elem);
+	}
 
 	return 0;
 }
@@ -751,6 +761,7 @@ int btrfs_add_delayed_extent_op(struct btrfs_fs_info *fs_info,
 				struct btrfs_delayed_extent_op *extent_op)
 {
 	struct btrfs_delayed_ref_head *head_ref;
+	struct btrfs_delayed_ref_node *node;
 	struct btrfs_delayed_ref_root *delayed_refs;
 	int ret;
 
@@ -763,7 +774,8 @@ int btrfs_add_delayed_extent_op(struct btrfs_fs_info *fs_info,
 	delayed_refs = &trans->transaction->delayed_refs;
 	spin_lock(&delayed_refs->lock);
 
-	ret = add_delayed_ref_head(fs_info, trans, &head_ref->node, bytenr,
+	node = &head_ref->node;
+	ret = add_delayed_ref_head(fs_info, trans, &node, bytenr,
 				   num_bytes, BTRFS_UPDATE_DELAYED_HEAD,
 				   extent_op->is_data);
 	BUG_ON(ret);
