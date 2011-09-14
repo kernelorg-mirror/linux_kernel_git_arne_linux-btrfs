@@ -33,6 +33,9 @@ struct btrfs_delayed_ref_node {
 	/* the size of the extent */
 	u64 num_bytes;
 
+	/* seq number to keep track of insertion order */
+	u64 seq;
+
 	/* ref count on this data structure */
 	atomic_t refs;
 
@@ -136,6 +139,21 @@ struct btrfs_delayed_ref_root {
 	int flushing;
 
 	u64 run_delayed_start;
+
+	/*
+	 * seq number of delayed refs. For qgroups we need to know if a backref
+	 * was being added before the currently processed ref or afterwards.
+	 */
+	u64 seq;
+
+	/*
+	 * seq_list holds a list of all seq numbers that are currently being
+	 * added to the list. When qgroups are active, the addition of a delayed
+	 * ref requires a walking of the backrefs which might take some time.
+	 * During this time, no newer ref must be processed, as it might
+	 * influence the outcome of the walk.
+	 */
+	struct list_head seq_head;
 };
 
 static inline void btrfs_put_delayed_ref(struct btrfs_delayed_ref_node *ref)
@@ -171,6 +189,9 @@ int btrfs_delayed_ref_lock(struct btrfs_trans_handle *trans,
 			   struct btrfs_delayed_ref_head *head);
 int btrfs_find_ref_cluster(struct btrfs_trans_handle *trans,
 			   struct list_head *cluster, u64 search_start);
+int btrfs_check_delayed_seq(struct btrfs_delayed_ref_root *delayed_refs,
+			    u64 seq);
+
 /*
  * a node might live in a head or a regular ref, this lets you
  * test for the proper type to use.
