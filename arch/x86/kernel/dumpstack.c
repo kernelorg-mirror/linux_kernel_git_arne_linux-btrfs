@@ -168,12 +168,12 @@ show_trace_log_lvl(struct task_struct *task, struct pt_regs *regs,
 void show_trace(struct task_struct *task, struct pt_regs *regs,
 		unsigned long *stack, unsigned long bp)
 {
-	show_trace_log_lvl(task, regs, stack, bp, "");
+	show_trace_log_lvl(task, regs, stack, bp, KERN_ERR);
 }
 
 void show_stack(struct task_struct *task, unsigned long *sp)
 {
-	show_stack_log_lvl(task, NULL, sp, 0, "");
+	show_stack_log_lvl(task, NULL, sp, 0, KERN_ERR);
 }
 
 /*
@@ -185,7 +185,7 @@ void dump_stack(void)
 	unsigned long stack;
 
 	bp = stack_frame(current, NULL);
-	printk("Pid: %d, comm: %.20s %s %s %.*s\n",
+	printk(KERN_ERR "Pid: %d, comm: %.20s %s %s %.*s\n",
 		current->pid, current->comm, print_tainted(),
 		init_utsname()->release,
 		(int)strcspn(init_utsname()->version, " "),
