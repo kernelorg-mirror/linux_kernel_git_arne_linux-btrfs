@@ -6281,6 +6281,11 @@ struct walk_control {
 	int reada_slot;
 	int reada_count;
 	int for_reloc;
+	u64 converted_refs;
+	u64 dropped_data_refs;
+	u64 dropped_tree_blocks;
+	u64 freed_extents;
+	u64 lookups;
 };
 
 #define DROP_REFERENCE	1
@@ -6334,6 +6339,7 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 		/* We don't lock the tree block, it's OK to be racy here */
 		ret = btrfs_lookup_extent_info(trans, root, bytenr, blocksize,
 					       &refs, &flags);
+		++wc->lookups;
 		BUG_ON(ret);
 		BUG_ON(refs == 0);
 
@@ -6401,6 +6407,7 @@ static noinline int walk_down_proc(struct btrfs_trans_handle *trans,
 					       eb->start, eb->len,
 					       &wc->refs[level],
 					       &wc->flags[level]);
+		++wc->lookups;
 		BUG_ON(ret);
 		BUG_ON(wc->refs[level] == 0);
 	}
@@ -6427,6 +6434,7 @@ static noinline int walk_down_proc(struct btrfs_trans_handle *trans,
 						  eb->len, flag, 0);
 		BUG_ON(ret);
 		wc->flags[level] |= flag;
+		++wc->converted_refs;
 	}
 
 	/*
@@ -6497,6 +6505,7 @@ static noinline int do_walk_down(struct btrfs_trans_handle *trans,
 	ret = btrfs_lookup_extent_info(trans, root, bytenr, blocksize,
 				       &wc->refs[level - 1],
 				       &wc->flags[level - 1]);
+	++wc->lookups;
 	BUG_ON(ret);
 	BUG_ON(wc->refs[level - 1] == 0);
 	*lookup_info = 0;
@@ -6553,8 +6562,6 @@ static noinline int do_walk_down(struct btrfs_trans_handle *trans,
 		wc->reada_slot = 0;
 	return 0;
 skip:
-	wc->refs[level - 1] = 0;
-	wc->flags[level - 1] = 0;
 	if (wc->stage == DROP_REFERENCE) {
 		if (wc->flags[level] & BTRFS_BLOCK_FLAG_FULL_BACKREF) {
 			parent = path->nodes[level]->start;
@@ -6566,8 +6573,11 @@ skip:
 
 		ret = btrfs_free_extent(trans, root, bytenr, blocksize, parent,
 				root->root_key.objectid, level - 1, 0, 0);
+		++wc->freed_extents;
 		BUG_ON(ret);
 	}
+	wc->refs[level - 1] = 0;
+	wc->flags[level - 1] = 0;
 	btrfs_tree_unlock(next);
 	free_extent_buffer(next);
 	*lookup_info = 1;
@@ -6624,6 +6634,7 @@ static noinline int walk_up_proc(struct btrfs_trans_handle *trans,
 						       eb->start, eb->len,
 						       &wc->refs[level],
 						       &wc->flags[level]);
+			++wc->lookups;
 			BUG_ON(ret);
 			BUG_ON(wc->refs[level] == 0);
 			if (wc->refs[level] == 1) {
@@ -6645,6 +6656,7 @@ static noinline int walk_up_proc(struct btrfs_trans_handle *trans,
 				ret = btrfs_dec_ref(trans, root, eb, 0,
 						    wc->for_reloc);
 			BUG_ON(ret);
+			++wc->dropped_data_refs;
 		}
 		/* make block locked assertion in clean_tree_block happy */
 		if (!path->locks[level] &&
@@ -6671,6 +6683,7 @@ static noinline int walk_up_proc(struct btrfs_trans_handle *trans,
 	}
 
 	btrfs_free_tree_block(trans, root, eb, parent, wc->refs[level] == 1, 0);
+	++wc->dropped_tree_blocks;
 out:
 	wc->refs[level] = 0;
 	wc->flags[level] = 0;
@@ -6889,6 +6902,7 @@ void btrfs_drop_snapshot(struct btrfs_root *root,
 	btrfs_release_path(path);
 	BUG_ON(err);
 
+printk("old stat: lookups %lld converted refs %lld dropped data refs %lld dropped tree blocks %lld freed extents %lld\n", wc->lookups, wc->converted_refs, wc->dropped_data_refs, wc->dropped_tree_blocks, wc->freed_extents);
 	ret = btrfs_del_root(trans, tree_root, &root->root_key);
 	BUG_ON(ret);
 
@@ -6919,6 +6933,7 @@ out_free:
 	kfree(wc);
 	btrfs_free_path(path);
 out:
+printk("leave btrfs_drop_snapshot\n");
 	if (err)
 		btrfs_std_error(root->fs_info, err);
 	return;
