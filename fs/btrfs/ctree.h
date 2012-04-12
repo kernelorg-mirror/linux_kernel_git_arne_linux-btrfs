@@ -3020,6 +3020,13 @@ int btrfs_scrub_progress(struct btrfs_root *root, u64 devid,
 			 struct btrfs_scrub_progress *progress);
 
 /* reada.c */
+#undef READA_DEBUG
+struct reada_extctl;
+struct reada_control;
+typedef void (*reada_cb_t)(struct btrfs_root *root, struct reada_control *rc,
+			   u64 wanted_generation, struct extent_buffer *eb,
+			   u64 start, int err, struct btrfs_key *top,
+			   void *ctx);
 struct reada_control {
 	struct btrfs_root	*root;		/* tree to prefetch */
 	struct btrfs_key	key_start;
@@ -3027,12 +3034,34 @@ struct reada_control {
 	atomic_t		elems;
 	struct kref		refcnt;
 	wait_queue_head_t	wait;
+	struct reada_control	*parent;
+	reada_cb_t		callback;
+#ifdef READA_DEBUG
+	int			not_first;
+#endif
 };
-struct reada_control *btrfs_reada_add(struct btrfs_root *root,
-			      struct btrfs_key *start, struct btrfs_key *end);
-int btrfs_reada_wait(void *handle);
+struct reada_control *btrfs_reada_alloc(struct reada_control *parent,
+			struct btrfs_root *root,
+			struct btrfs_key *key_start, struct btrfs_key *key_end,
+			reada_cb_t callback);
+int btrfs_reada_add(struct reada_control *parent,
+			struct btrfs_root *root,
+			struct btrfs_key *key_start, struct btrfs_key *key_end,
+			reada_cb_t callback, void *ctx,
+			struct reada_control **rcp);
+int btrfs_reada_wait(struct reada_control *handle);
 void btrfs_reada_detach(void *handle);
 int btree_readahead_hook(struct btrfs_root *root, struct extent_buffer *eb,
 			 u64 start, int err);
+int reada_add_block(struct reada_control *rc, u64 logical,
+		   struct btrfs_key *top, int level, u64 generation, void *ctx);
+void reada_control_elem_get(struct reada_control *rc);
+void reada_control_elem_put(struct reada_control *rc);
+void reada_start_machine(struct btrfs_fs_info *fs_info);
+int btrfs_reada_abort(struct btrfs_fs_info *fs_info, struct reada_control *rc);
 
+/* droptree.c */
+int btrfs_droptree_pause(struct btrfs_fs_info *fs_info);
+void btrfs_droptree_continue(struct btrfs_fs_info *fs_info);
+void droptree_drop_list(struct btrfs_fs_info *fs_info, struct list_head *list);
 #endif

@@ -1136,7 +1136,6 @@ static noinline_for_stack int scrub_stripe(struct scrub_dev *sdev,
 	u64 generation;
 	int mirror_num;
 	struct reada_control *reada1;
-	struct reada_control *reada2;
 	struct btrfs_key key_start;
 	struct btrfs_key key_end;
 
@@ -1189,23 +1188,21 @@ static noinline_for_stack int scrub_stripe(struct scrub_dev *sdev,
 	key_start.objectid = logical;
 	key_start.type = BTRFS_EXTENT_ITEM_KEY;
 	key_start.offset = (u64)0;
+	key_end = key_start;
 	key_end.objectid = base + offset + nstripes * increment;
-	key_end.type = BTRFS_EXTENT_ITEM_KEY;
-	key_end.offset = (u64)0;
-	reada1 = btrfs_reada_add(root, &key_start, &key_end);
-
-	key_start.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
-	key_start.type = BTRFS_EXTENT_CSUM_KEY;
-	key_start.offset = logical;
-	key_end.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
-	key_end.type = BTRFS_EXTENT_CSUM_KEY;
-	key_end.offset = base + offset + nstripes * increment;
-	reada2 = btrfs_reada_add(csum_root, &key_start, &key_end);
-
-	if (!IS_ERR(reada1))
+	ret = btrfs_reada_add(NULL, root, &key_start, &key_end,
+			      NULL, NULL, &reada1);
+	/* if readahead fails, we just go ahead without it */
+	if (ret == 0) {
+		key_start.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
+		key_start.type = BTRFS_EXTENT_CSUM_KEY;
+		key_start.offset = logical;
+		key_end = key_start;
+		key_end.offset = base + offset + nstripes * increment;
+		ret = btrfs_reada_add(reada1, csum_root, &key_start,
+				      &key_end, NULL, NULL, NULL);
 		btrfs_reada_wait(reada1);
-	if (!IS_ERR(reada2))
-		btrfs_reada_wait(reada2);
+	}
 
 	mutex_lock(&fs_info->scrub_lock);
 	while (atomic_read(&fs_info->scrub_pause_req)) {
