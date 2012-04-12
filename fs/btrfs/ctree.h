@@ -1257,6 +1257,41 @@ struct btrfs_fs_info {
 
 	/* next backup root to be overwritten */
 	int backup_root_index;
+
+	/*
+	 * global state for snapshot deletion via readahead. All fields are
+	 * protected by droptree_lock. droptree_lock is a mutex and not a
+	 * spinlock as allocations are done inside and we don't want to use
+	 * atomic allocations unless we really have to.
+	 */
+	struct mutex droptree_lock;
+
+	/*
+	 * currently running requests (droptree_nodes) for each level and
+	 * the corresponding limits. It's necessary to limit them to have
+	 * an upper limit on the state that has to be written with each
+	 * commit. All nodes exceeding the limit are enqueued to droptree_queue.
+	 */
+	long droptree_req[BTRFS_MAX_LEVEL + 1];
+	long droptree_limit[BTRFS_MAX_LEVEL + 1];
+	struct list_head droptree_queue[BTRFS_MAX_LEVEL + 1];
+
+	/*
+	 * when droptree is paused, all currently running requests are moved
+	 * to droptree_restart. All nodes in droptree_queue are moved to
+	 * droptree_requeue
+	 */
+	struct list_head droptree_restart;
+	struct list_head droptree_requeue;
+
+	/*
+	 * synchronization for pause/restart. droptree_rc is the top-level
+	 * reada_control, used to cancel all running requests
+	 */
+	int droptrees_running;
+	int droptree_pause_req;
+	wait_queue_head_t droptree_wait;
+	struct reada_control *droptree_rc;
 };
 
 /*

@@ -1911,6 +1911,7 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 	int err = -EINVAL;
 	int num_backups_tried = 0;
 	int backup_index = 0;
+	int i;
 
 	extent_root = fs_info->extent_root =
 		kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
@@ -1988,6 +1989,23 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 	/* readahead state */
 	INIT_RADIX_TREE(&fs_info->reada_tree, GFP_NOFS & ~__GFP_WAIT);
 	spin_lock_init(&fs_info->reada_lock);
+
+	/* snapshot deletion state */
+	mutex_init(&fs_info->droptree_lock);
+	fs_info->droptree_pause_req = 0;
+	fs_info->droptrees_running = 0;
+	for (i = 0; i < BTRFS_MAX_LEVEL; ++i) {
+		fs_info->droptree_limit[i] = 100;
+		fs_info->droptree_req[i] = 0;
+		INIT_LIST_HEAD(fs_info->droptree_queue + i);
+	}
+	/* FIXME calculate some sane values, maybe based on avail RAM */
+	fs_info->droptree_limit[0] = 40000;
+	fs_info->droptree_limit[1] = 10000;
+	fs_info->droptree_limit[2] = 4000;
+	INIT_LIST_HEAD(&fs_info->droptree_restart);
+	INIT_LIST_HEAD(&fs_info->droptree_requeue);
+	init_waitqueue_head(&fs_info->droptree_wait);
 
 	fs_info->thread_pool_size = min_t(unsigned long,
 					  num_online_cpus() + 2, 8);
