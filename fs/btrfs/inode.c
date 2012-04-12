@@ -1809,7 +1809,8 @@ static int btrfs_finish_ordered_io(struct inode *inode, u64 start, u64 end)
 	}
 	ret = 0;
 out:
-	if (root != root->fs_info->tree_root)
+	if (root != root->fs_info->tree_root ||
+	    inode->i_ino == BTRFS_DROPTREE_INO_OBJECTID)
 		btrfs_delalloc_release_metadata(inode, ordered_extent->len);
 	if (trans) {
 		if (nolock)

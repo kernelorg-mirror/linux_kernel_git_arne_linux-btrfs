@@ -116,6 +116,12 @@ struct btrfs_ordered_sum;
  */
 #define BTRFS_FREE_INO_OBJECTID -12ULL
 
+/*
+ * The inode number assigned to the special inode for storing
+ * snapshot deletion progress
+ */
+#define BTRFS_DROPTREE_INO_OBJECTID -13ULL
+
 /* dummy objectid represents multiple objectids */
 #define BTRFS_MULTIPLE_OBJECTIDS -255ULL
 

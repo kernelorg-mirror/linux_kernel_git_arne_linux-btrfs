@@ -110,4 +110,36 @@ int btrfs_return_cluster_to_free_space(
 			       struct btrfs_free_cluster *cluster);
 int btrfs_trim_block_group(struct btrfs_block_group_cache *block_group,
 			   u64 *trimmed, u64 start, u64 end, u64 minlen);
+
+struct io_ctl {
+	void *cur, *orig;
+	struct page *page;
+	struct page **pages;
+	struct btrfs_root *root;
+	unsigned long size;
+	int index;
+	int num_pages;
+	unsigned check_crcs:1;
+};
+
+int io_ctl_init(struct io_ctl *io_ctl, struct inode *inode,
+		struct btrfs_root *root);
+void io_ctl_free(struct io_ctl *io_ctl);
+void io_ctl_unmap_page(struct io_ctl *io_ctl);
+void io_ctl_map_page(struct io_ctl *io_ctl, int clear);
+void io_ctl_drop_pages(struct io_ctl *io_ctl);
+int io_ctl_prepare_pages(struct io_ctl *io_ctl, struct inode *inode,
+			 int uptodate);
+void io_ctl_set_bytes(struct io_ctl *io_ctl, void *data, unsigned long len);
+void io_ctl_get_bytes(struct io_ctl *io_ctl, void *data, unsigned long len);
+void io_ctl_set_u64(struct io_ctl *io_ctl, u64 val);
+u64 io_ctl_get_u64(struct io_ctl *io_ctl);
+void io_ctl_set_u32(struct io_ctl *io_ctl, u32 val);
+u32 io_ctl_get_u32(struct io_ctl *io_ctl);
+void io_ctl_set_u16(struct io_ctl *io_ctl, u16 val);
+u16 io_ctl_get_u16(struct io_ctl *io_ctl);
+void io_ctl_set_u8(struct io_ctl *io_ctl, u8 val);
+u8 io_ctl_get_u8(struct io_ctl *io_ctl);
+void io_ctl_zero_remaining_pages(struct io_ctl *io_ctl);
+
 #endif

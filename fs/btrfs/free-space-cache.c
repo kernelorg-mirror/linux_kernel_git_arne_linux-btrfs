@@ -259,19 +259,8 @@ static int readahead_cache(struct inode *inode)
 	return 0;
 }
 
-struct io_ctl {
-	void *cur, *orig;
-	struct page *page;
-	struct page **pages;
-	struct btrfs_root *root;
-	unsigned long size;
-	int index;
-	int num_pages;
-	unsigned check_crcs:1;
-};
-
-static int io_ctl_init(struct io_ctl *io_ctl, struct inode *inode,
-		       struct btrfs_root *root)
+int io_ctl_init(struct io_ctl *io_ctl, struct inode *inode,
+		struct btrfs_root *root)
 {
 	memset(io_ctl, 0, sizeof(struct io_ctl));
 	io_ctl->num_pages = (i_size_read(inode) + PAGE_CACHE_SIZE - 1) >>
@@ -286,12 +275,12 @@ static int io_ctl_init(struct io_ctl *io_ctl, struct inode *inode,
 	return 0;
 }
 
-static void io_ctl_free(struct io_ctl *io_ctl)
+void io_ctl_free(struct io_ctl *io_ctl)
 {
 	kfree(io_ctl->pages);
 }
 
-static void io_ctl_unmap_page(struct io_ctl *io_ctl)
+void io_ctl_unmap_page(struct io_ctl *io_ctl)
 {
 	if (io_ctl->cur) {
 		kunmap(io_ctl->page);
@@ -300,7 +289,7 @@ static void io_ctl_unmap_page(struct io_ctl *io_ctl)
 	}
 }
 
-static void io_ctl_map_page(struct io_ctl *io_ctl, int clear)
+void io_ctl_map_page(struct io_ctl *io_ctl, int clear)
 {
 	WARN_ON(io_ctl->cur);
 	BUG_ON(io_ctl->index >= io_ctl->num_pages);
@@ -312,7 +301,7 @@ static void io_ctl_map_page(struct io_ctl *io_ctl, int clear)
 		memset(io_ctl->cur, 0, PAGE_CACHE_SIZE);
 }
 
-static void io_ctl_drop_pages(struct io_ctl *io_ctl)
+void io_ctl_drop_pages(struct io_ctl *io_ctl)
 {
 	int i;
 
@@ -327,8 +316,8 @@ static void io_ctl_drop_pages(struct io_ctl *io_ctl)
 	}
 }
 
-static int io_ctl_prepare_pages(struct io_ctl *io_ctl, struct inode *inode,
-				int uptodate)
+int io_ctl_prepare_pages(struct io_ctl *io_ctl, struct inode *inode,
+			 int uptodate)
 {
 	struct page *page;
 	gfp_t mask = btrfs_alloc_write_mask(inode->i_mapping);
@@ -359,6 +348,108 @@ static int io_ctl_prepare_pages(struct io_ctl *io_ctl, struct inode *inode,
 	}
 
 	return 0;
+}
+
+void io_ctl_set_bytes(struct io_ctl *io_ctl, void *data, unsigned long len)
+{
+	unsigned long l;
+
+	while (len) {
+		if (io_ctl->cur == NULL)
+			io_ctl_map_page(io_ctl, 1);
+		l = min(len, io_ctl->size);
+		memcpy(io_ctl->cur, data, l);
+		if (len != l) {
+			io_ctl_unmap_page(io_ctl);
+		} else {
+			io_ctl->cur += l;
+			io_ctl->size -= l;
+		}
+		data += l;
+		len -= l;
+	}
+}
+
+void io_ctl_get_bytes(struct io_ctl *io_ctl, void *data, unsigned long len)
+{
+	unsigned long l;
+
+	while (len) {
+		if (io_ctl->cur == NULL)
+			io_ctl_map_page(io_ctl, 0);
+		l = min(len, io_ctl->size);
+		memcpy(data, io_ctl->cur, l);
+		if (len != l) {
+			io_ctl_unmap_page(io_ctl);
+		} else {
+			io_ctl->cur += l;
+			io_ctl->size -= l;
+		}
+		data += l;
+		len -= l;
+	}
+}
+
+void io_ctl_set_u64(struct io_ctl *io_ctl, u64 val)
+{
+	u64 v = cpu_to_le64(val);
+
+	io_ctl_set_bytes(io_ctl, &v, sizeof(u64));
+}
+
+u64 io_ctl_get_u64(struct io_ctl *io_ctl)
+{
+	u64 v;
+
+	io_ctl_get_bytes(io_ctl, &v, sizeof(u64));
+
+	return le64_to_cpu(v);
+}
+
+void io_ctl_set_u32(struct io_ctl *io_ctl, u32 val)
+{
+	u32 v = cpu_to_le32(val);
+
+	io_ctl_set_bytes(io_ctl, &v, sizeof(u32));
+}
+
+u32 io_ctl_get_u32(struct io_ctl *io_ctl)
+{
+	u32 v;
+
+	io_ctl_get_bytes(io_ctl, &v, sizeof(u32));
+
+	return le32_to_cpu(v);
+}
+
+void io_ctl_set_u16(struct io_ctl *io_ctl, u16 val)
+{
+	u16 v = cpu_to_le16(val);
+
+	io_ctl_set_bytes(io_ctl, &v, sizeof(u16));
+}
+
+u16 io_ctl_get_u16(struct io_ctl *io_ctl)
+{
+	u16 v;
+
+	io_ctl_get_bytes(io_ctl, &v, sizeof(u16));
+
+	return le16_to_cpu(v);
+}
+
+void io_ctl_set_u8(struct io_ctl *io_ctl, u8 val)
+{
+	io_ctl_set_bytes(io_ctl, &val, sizeof(u8));
+}
+
+u8 io_ctl_get_u8(struct io_ctl *io_ctl)
+{
+	u8 v;
+
+	io_ctl_get_bytes(io_ctl, &v, sizeof(u8));
+
+	return v;
 }
 
 static void io_ctl_set_generation(struct io_ctl *io_ctl, u64 generation)
@@ -523,7 +614,7 @@ static int io_ctl_add_bitmap(struct io_ctl *io_ctl, void *bitmap)
 	return 0;
 }
 
-static void io_ctl_zero_remaining_pages(struct io_ctl *io_ctl)
+void io_ctl_zero_remaining_pages(struct io_ctl *io_ctl)
 {
 	/*
 	 * If we're not on the boundary we know we've modified the page and we
