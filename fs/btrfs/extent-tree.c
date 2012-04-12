@@ -6902,7 +6902,6 @@ void btrfs_drop_snapshot(struct btrfs_root *root,
 	btrfs_release_path(path);
 	BUG_ON(err);
 
-printk("old stat: lookups %lld converted refs %lld dropped data refs %lld dropped tree blocks %lld freed extents %lld\n", wc->lookups, wc->converted_refs, wc->dropped_data_refs, wc->dropped_tree_blocks, wc->freed_extents);
 	ret = btrfs_del_root(trans, tree_root, &root->root_key);
 	BUG_ON(ret);
 
@@ -6933,7 +6932,6 @@ out_free:
 	kfree(wc);
 	btrfs_free_path(path);
 out:
-printk("leave btrfs_drop_snapshot\n");
 	if (err)
 		btrfs_std_error(root->fs_info, err);
 	return;
