@@ -1112,6 +1112,19 @@ int btrfs_reada_wait(struct reada_control *rc)
 		dump_devs(fs_info, atomic_read(&rc->elems) < 10 ? 1 : 0);
 		printk(KERN_DEBUG "reada_wait on %p: %d elems\n", rc,
 			atomic_read(&rc->elems));
+		mutex_lock(&fs_info->droptree_lock);
+
+		for (i = 0; i < BTRFS_MAX_LEVEL; ++i) {
+			if (fs_info->droptree_req[i] == 0)
+				continue;
+			printk(KERN_DEBUG "droptree req on level %d: %ld out "
+				"of %ld, queue is %sempty\n",
+				i, fs_info->droptree_req[i],
+				fs_info->droptree_limit[i],
+				list_empty(&fs_info->droptree_queue[i]) ?
+						"" : "not ");
+		}
+		mutex_unlock(&fs_info->droptree_lock);
 	}
 
 	dump_devs(fs_info, atomic_read(&rc->elems) < 10 ? 1 : 0);

@@ -3041,6 +3041,7 @@ int close_ctree(struct btrfs_root *root)
 	btrfs_pause_balance(root->fs_info);
 
 	btrfs_scrub_cancel(root);
+	btrfs_droptree_pause(fs_info);
 
 	/* wait for any defraggers to finish */
 	wait_event(fs_info->transaction_wait,

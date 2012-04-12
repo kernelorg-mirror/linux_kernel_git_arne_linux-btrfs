@@ -1182,6 +1182,9 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans,
 	spin_unlock(&cur_trans->commit_lock);
 	wake_up(&root->fs_info->transaction_blocked_wait);
 
+	ret = btrfs_droptree_pause(root->fs_info);
+	BUG_ON(ret);
+
 	spin_lock(&root->fs_info->trans_lock);
 	if (cur_trans->list.prev != &root->fs_info->trans_list) {
 		prev_trans = list_entry(cur_trans->list.prev,
@@ -1363,6 +1366,7 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans,
 	trace_btrfs_transaction_commit(root);
 
 	btrfs_scrub_continue(root);
+	btrfs_droptree_continue(root->fs_info);
 
 	if (current->journal_info == trans)
 		current->journal_info = NULL;
@@ -1381,12 +1385,22 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans,
 int btrfs_clean_old_snapshots(struct btrfs_root *root)
 {
 	LIST_HEAD(list);
+	LIST_HEAD(new);
 	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct btrfs_root_item *root_item = &root->root_item;
 
 	spin_lock(&fs_info->trans_lock);
 	list_splice_init(&fs_info->dead_roots, &list);
 	spin_unlock(&fs_info->trans_lock);
 
+	/*
+	 * in a first pass, pick out all snapshot deletions that have been
+	 * interrupted from a previous mount on an older kernel that didn't
+	 * support the droptree version of snapshot deletion. We continue
+	 * it with the old code. Also deletions of roots from very old
+	 * filesystems with old-style backrefs will be handled by the old
+	 * code
+	 */
 	while (!list_empty(&list)) {
 		root = list_entry(list.next, struct btrfs_root, root_list);
 		list_del(&root->root_list);
@@ -1394,10 +1408,27 @@ int btrfs_clean_old_snapshots(struct btrfs_root *root)
 		btrfs_kill_all_delayed_nodes(root);
 
 		if (btrfs_header_backref_rev(root->node) <
-		    BTRFS_MIXED_BACKREF_REV)
+		    BTRFS_MIXED_BACKREF_REV) {
 			btrfs_drop_snapshot(root, NULL, 0, 0);
-		else
+		} else if (btrfs_disk_key_objectid(&root_item->drop_progress)) {
 			btrfs_drop_snapshot(root, NULL, 1, 0);
+		} else {
+			/* put on list for processing by droptree */
+			list_add_tail(&root->root_list, &new);
+		}
 	}
+
+	droptree_drop_list(fs_info, &new);
+	while (!list_empty(&new)) {
+		/*
+		 * if there are any roots left on the list after drop_list,
+		 * delete them with the old code. This can happen in when the
+		 * fs hasn't got enough space for the droptree inode left.
+		 */
+		root = list_entry(list.next, struct btrfs_root, root_list);
+		list_del(&root->root_list);
+		btrfs_drop_snapshot(root, NULL, 1, 0);
+	}
+
 	return 0;
 }
