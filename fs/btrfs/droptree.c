@@ -1217,9 +1217,6 @@ out:
 	btrfs_free_path(path);
 	btrfs_end_transaction(trans, root);
 
-	if (IS_ERR(inode))
-		return inode;
-
 	return inode;
 }
 
@@ -1641,7 +1638,7 @@ void droptree_drop_list(struct btrfs_fs_info *fs_info, struct list_head *list)
 		return;
 
 	inode = droptree_get_inode(fs_info);
-	if (IS_ERR(inode))
+	if (IS_ERR_OR_NULL(inode))
 		goto out;
 
 	path = btrfs_alloc_path();
